@@ -1,14 +1,10 @@
 pipeline {
-    agent {
-        docker {
-            image 'node:18' // hoặc maven nếu là Java
-        }
-    }
+    agent any
 
     environment {
-        SONARQUBE_SERVER = 'SonarQube' // cấu hình trong Jenkins > Manage Jenkins > Global Tool
-        DOCKER_IMAGE = 'hunglv/demo-app' // thay bằng tên image của Hưng
-        REGISTRY_CREDENTIALS = 'docker-hub-credentials-id' // tạo sẵn trong Jenkins credentials
+        SONARQUBE_SERVER = 'SonarQube'
+        DOCKER_IMAGE = 'hunglv/demo-app'
+        REGISTRY_CREDENTIALS = 'docker-hub-credentials-id'
     }
 
     stages {
@@ -20,41 +16,56 @@ pipeline {
 
         stage('Install dependencies') {
             steps {
-                sh 'npm install'
+                script {
+                    docker.image('node:18').inside {
+                        sh 'npm install'
+                    }
+                }
             }
         }
 
         stage('Run tests') {
             steps {
-                sh 'npm test || echo "Tests failed but continue..."'
+                script {
+                    docker.image('node:18').inside {
+                        sh 'npm test || echo "Tests failed but continue..."'
+                    }
+                }
             }
         }
 
         stage('SonarQube Analysis') {
             steps {
                 withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                    sh 'npx sonar-scanner \
-                        -Dsonar.projectKey=demo-app \
-                        -Dsonar.sources=. \
-                        -Dsonar.host.url=$SONAR_HOST_URL \
-                        -Dsonar.login=$SONAR_AUTH_TOKEN'
+                    script {
+                        docker.image('node:18').inside {
+                            sh 'npx sonar-scanner \
+                                -Dsonar.projectKey=demo-app \
+                                -Dsonar.sources=. \
+                                -Dsonar.host.url=$SONAR_HOST_URL \
+                                -Dsonar.login=$SONAR_AUTH_TOKEN'
+                        }
+                    }
                 }
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh 'docker build -t $DOCKER_IMAGE:$BUILD_NUMBER .'
+                script {
+                    docker.build("$DOCKER_IMAGE:$BUILD_NUMBER")
+                }
             }
         }
 
         stage('Push Docker Image') {
             steps {
                 withCredentials([usernamePassword(credentialsId: "${REGISTRY_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    sh '''
-                        echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
-                        docker push $DOCKER_IMAGE:$BUILD_NUMBER
-                    '''
+                    script {
+                        docker.withRegistry('', "${REGISTRY_CREDENTIALS}") {
+                            docker.image("$DOCKER_IMAGE:$BUILD_NUMBER").push()
+                        }
+                    }
                 }
             }
         }
