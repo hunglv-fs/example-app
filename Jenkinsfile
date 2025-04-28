@@ -1,12 +1,6 @@
 pipeline {
     agent any
 
-    environment {
-        SONARQUBE_SERVER = 'SonarQube'
-        DOCKER_IMAGE = 'hunglv/demo-app'
-        REGISTRY_CREDENTIALS = 'docker-hub-credentials-id'
-    }
-
     stages {
         stage('Checkout') {
             steps {
@@ -14,69 +8,30 @@ pipeline {
             }
         }
 
-        stage('Install dependencies') {
+        stage('Check Docker Version') {
             steps {
-                script {
-                    docker.image('node:18').inside {
-                        sh 'npm install'
-                    }
-                }
+                sh '''
+                    if command -v docker >/dev/null 2>&1; then
+                        echo "Docker is installed!"
+                        docker --version
+                    else
+                        echo "Docker is NOT installed!"
+                        exit 1
+                    fi
+                '''
             }
         }
 
-        stage('Run tests') {
+        stage('Say Hello') {
             steps {
-                script {
-                    docker.image('node:18').inside {
-                        sh 'npm test || echo "Tests failed but continue..."'
-                    }
-                }
-            }
-        }
-
-        stage('SonarQube Analysis') {
-            steps {
-                withSonarQubeEnv("${SONARQUBE_SERVER}") {
-                    script {
-                        docker.image('node:18').inside {
-                            sh 'npx sonar-scanner \
-                                -Dsonar.projectKey=demo-app \
-                                -Dsonar.sources=. \
-                                -Dsonar.host.url=$SONAR_HOST_URL \
-                                -Dsonar.login=$SONAR_AUTH_TOKEN'
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('Build Docker Image') {
-            steps {
-                script {
-                    docker.build("$DOCKER_IMAGE:$BUILD_NUMBER")
-                }
-            }
-        }
-
-        stage('Push Docker Image') {
-            steps {
-                withCredentials([usernamePassword(credentialsId: "${REGISTRY_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    script {
-                        docker.withRegistry('', "${REGISTRY_CREDENTIALS}") {
-                            docker.image("$DOCKER_IMAGE:$BUILD_NUMBER").push()
-                        }
-                    }
-                }
+                sh 'echo "Hello from Jenkins!"'
             }
         }
     }
 
     post {
         always {
-            echo "Pipeline finished"
-        }
-        failure {
-            echo "Build failed"
+            echo "Pipeline finished!"
         }
     }
 }
