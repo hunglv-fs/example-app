@@ -1,4 +1,3 @@
-vậy bạn kiểm tra file Jenkinsfile có chuẩn xác chưa ? 
 pipeline {
     agent any
 
