@@ -28,22 +28,27 @@ pipeline {
             steps {
                 script {
                     docker.image('node:18').inside {
-                        sh 'npm test || echo "Tests failed but continue..."'
+                        sh 'npm test' 
                     }
                 }
             }
         }
 
         stage('SonarQube Analysis') {
+            environment {
+                SCANNER_HOME = tool 'SonarQubeScanner'
+            }
             steps {
                 withSonarQubeEnv("${SONARQUBE_SERVER}") {
                     script {
                         docker.image('node:18').inside {
-                            sh 'npx sonar-scanner \
+                            sh """
+                            npx sonar-scanner \
                                 -Dsonar.projectKey=demo-app \
+                                -Dsonar.projectName=demo-app \
                                 -Dsonar.sources=. \
-                                -Dsonar.host.url=$SONAR_HOST_URL \
-                                -Dsonar.login=$SONAR_AUTH_TOKEN'
+                                -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
+                            """
                         }
                     }
                 }
@@ -54,17 +59,17 @@ pipeline {
             steps {
                 script {
                     docker.build("$DOCKER_IMAGE:$BUILD_NUMBER")
+                    docker.image("$DOCKER_IMAGE:$BUILD_NUMBER").tag("latest")
                 }
             }
         }
 
         stage('Push Docker Image') {
             steps {
-                withCredentials([usernamePassword(credentialsId: "${REGISTRY_CREDENTIALS}", usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                    script {
-                        docker.withRegistry('', "${REGISTRY_CREDENTIALS}") {
-                            docker.image("$DOCKER_IMAGE:$BUILD_NUMBER").push()
-                        }
+                script {
+                    docker.withRegistry('https://registry.hub.docker.com', "${REGISTRY_CREDENTIALS}") {
+                        docker.image("$DOCKER_IMAGE:$BUILD_NUMBER").push()
+                        docker.image("$DOCKER_IMAGE:latest").push()
                     }
                 }
             }
@@ -74,9 +79,15 @@ pipeline {
     post {
         always {
             echo "Pipeline finished"
+            // Clean workspace
+            cleanWs()
         }
         failure {
             echo "Build failed"
+            // Optional: Send notification
+        }
+        success {
+            echo "Build succeeded!"
         }
     }
 }
